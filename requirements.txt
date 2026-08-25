@@ -1,0 +1,7 @@
+streamlit
+pandas
+python-dotenv
+google-api-python-client
+langchain-groq
+requests
+beautifulsoup4
