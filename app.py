@@ -10,9 +10,9 @@ from personalization import personalize_influencers
 from sending import process_outreach
 
 
-# ==========================================
-# Streamlit Configuration
-# ==========================================
+# =========================================================
+# STREAMLIT CONFIGURATION
+# =========================================================
 
 st.set_page_config(
     page_title="AI Influencer Outreach System",
@@ -28,47 +28,55 @@ st.write(
 )
 
 
-# ==========================================
-# Load Demo Dataset
-# ==========================================
+# =========================================================
+# CONFIGURATION
+# =========================================================
+
+# The saved dataset contains Technology influencers.
+# It is used when live YouTube discovery is unavailable.
+DEFAULT_DEMO_NICHE = "Technology"
+
+DEMO_DATASET = "data/discovered_influencers.csv"
+
+
+# =========================================================
+# LOAD SAVED INFLUENCERS
+# =========================================================
 
 def load_demo_influencers():
     """
     Load previously discovered real influencers.
 
-    This dataset is used for the public demo so
-    the application can continue working when
-    the YouTube API quota is unavailable.
+    The dataset is used as a fallback because the
+    current YouTube API quota is unavailable.
     """
 
-    demo_file = (
-        "data/discovered_influencers.csv"
-    )
-
-    if not os.path.exists(demo_file):
+    if not os.path.exists(DEMO_DATASET):
         return None
 
     try:
+        df = pd.read_csv(DEMO_DATASET)
 
-        return pd.read_csv(
-            demo_file
-        )
+        return df
 
     except Exception as e:
 
         st.error(
-            f"Could not load influencer dataset: {e}"
+            f"Could not load the influencer dataset: {e}"
         )
 
         return None
 
 
-# ==========================================
-# Session State
-# ==========================================
+# =========================================================
+# SESSION STATE
+# =========================================================
 
 if "niche" not in st.session_state:
     st.session_state.niche = ""
+
+if "effective_niche" not in st.session_state:
+    st.session_state.effective_niche = ""
 
 if "niche_data" not in st.session_state:
     st.session_state.niche_data = None
@@ -89,53 +97,134 @@ if "tracker_df" not in st.session_state:
     st.session_state.tracker_df = None
 
 
-# ==========================================
-# Niche Input
-# ==========================================
+# =========================================================
+# NICHE INPUT
+# =========================================================
 
-niche = st.text_input(
+user_niche = st.text_input(
     "Enter influencer niche",
     value=st.session_state.niche,
-    placeholder="Technology, Fitness, Beauty..."
+    placeholder="Technology, Education, Fitness, Beauty..."
 )
 
 
-# ==========================================
+# =========================================================
+# DETERMINE EFFECTIVE NICHE
+# =========================================================
+
+effective_niche = user_niche.strip()
+
+
+if effective_niche:
+
+    # -----------------------------------------------------
+    # Current demo is using the saved Technology dataset.
+    # -----------------------------------------------------
+
+    if effective_niche.lower() != DEFAULT_DEMO_NICHE.lower():
+
+        st.warning(
+            f"⚠️ **YouTube API quota limit has been exceeded.**\n\n"
+            f"Live influencer discovery is temporarily "
+            f"unavailable.\n\n"
+            f"You entered **{effective_niche}**, but the "
+            f"available fallback dataset contains "
+            f"**{DEFAULT_DEMO_NICHE}** influencers.\n\n"
+            f"The system will therefore continue using "
+            f"**{DEFAULT_DEMO_NICHE}** as the effective niche."
+        )
+
+        effective_niche = DEFAULT_DEMO_NICHE
+
+    else:
+
+        st.info(
+            "ℹ️ YouTube API quota limit has been exceeded. "
+            "The system will continue using the available "
+            "**Technology** influencer dataset."
+        )
+
+
+# Store the effective niche
+if effective_niche:
+    st.session_state.effective_niche = effective_niche
+
+
+# =========================================================
 # STEP 1
-# AI Keyword Generation + Discovery
-# ==========================================
+# DISCOVERY + FILTERING
+# =========================================================
 
 st.header("1️⃣ Influencer Discovery & Filtering")
+
 
 if st.button(
     "🔎 Find Influencers",
     type="primary"
 ):
 
-    if not niche.strip():
+    # -----------------------------------------------------
+    # Validate input
+    # -----------------------------------------------------
+
+    if not user_niche.strip():
 
         st.warning(
-            "Please enter a niche first."
+            "Please enter an influencer niche first."
         )
 
         st.stop()
 
-    st.session_state.niche = (
-        niche.strip()
+
+    # -----------------------------------------------------
+    # Store original user input
+    # -----------------------------------------------------
+
+    st.session_state.niche = user_niche.strip()
+
+
+    # -----------------------------------------------------
+    # Get effective niche
+    # -----------------------------------------------------
+
+    effective_niche = (
+        st.session_state.effective_niche
     )
 
-    # --------------------------------------
-    # Generate niche keywords using Groq
-    # --------------------------------------
+    if not effective_niche:
+
+        effective_niche = DEFAULT_DEMO_NICHE
+
+        st.session_state.effective_niche = (
+            effective_niche
+        )
+
+
+    # -----------------------------------------------------
+    # Show effective niche
+    # -----------------------------------------------------
+
+    st.write(
+        f"**User niche:** {user_niche.strip()}"
+    )
+
+    st.write(
+        f"**Processing niche:** {effective_niche}"
+    )
+
+
+    # =====================================================
+    # AI KEYWORD GENERATION
+    # =====================================================
 
     with st.spinner(
-        "Understanding the niche with AI..."
+        f"Generating AI keywords for {effective_niche}..."
     ):
 
         try:
 
             niche_data = generate_keywords(
-                niche.strip()
+                effective_niche
             )
 
         except Exception as e:
@@ -146,13 +235,13 @@ if st.button(
 
             st.stop()
 
-    st.session_state.niche_data = (
-        niche_data
-    )
 
-    # --------------------------------------
-    # Display generated keywords
-    # --------------------------------------
+    st.session_state.niche_data = niche_data
+
+
+    # =====================================================
+    # DISPLAY GENERATED KEYWORDS
+    # =====================================================
 
     keywords = niche_data.get(
         "keywords",
@@ -164,41 +253,53 @@ if st.button(
         []
     )
 
+
     with st.expander(
-        "View AI-generated niche information"
+        "🤖 View AI-generated niche information"
     ):
 
-        st.write(
-            "**Keywords:**"
-        )
+        st.write("### Keywords")
 
-        st.write(
-            ", ".join(
-                keywords
+        if keywords:
+
+            st.write(
+                ", ".join(keywords)
             )
-        )
 
-        st.write(
-            "**Topics:**"
-        )
+        else:
 
-        st.write(
-            ", ".join(
-                topics
+            st.write(
+                "No keywords generated."
             )
-        )
 
-    # --------------------------------------
-    # Load real discovered creators
-    # --------------------------------------
+
+        st.write("### Topics")
+
+        if topics:
+
+            st.write(
+                ", ".join(topics)
+            )
+
+        else:
+
+            st.write(
+                "No topics generated."
+            )
+
+
+    # =====================================================
+    # LOAD SAVED DATASET
+    # =====================================================
 
     with st.spinner(
-        "Loading discovered influencers..."
+        "Loading previously discovered influencers..."
     ):
 
         influencers_df = (
             load_demo_influencers()
         )
+
 
     if influencers_df is None:
 
@@ -209,36 +310,66 @@ if st.button(
 
         st.stop()
 
-    # --------------------------------------
-    # Update niche
-    # --------------------------------------
+
+    # =====================================================
+    # CHECK DATASET
+    # =====================================================
+
+    required_columns = [
+        "channel_id",
+        "name",
+        "description",
+        "profile_url",
+        "followers",
+        "platform"
+    ]
+
+
+    missing_columns = [
+        column
+        for column in required_columns
+        if column not in influencers_df.columns
+    ]
+
+
+    if missing_columns:
+
+        st.error(
+            "The influencer dataset is missing "
+            f"required columns: {missing_columns}"
+        )
+
+        st.stop()
+
+
+    # =====================================================
+    # USE EFFECTIVE NICHE
+    # =====================================================
 
     influencers_df["niche"] = (
-        niche.strip()
+        effective_niche
     )
 
-    # --------------------------------------
-    # Store discovered data
-    # --------------------------------------
 
+    # Store discovered influencers
     st.session_state.influencers_df = (
         influencers_df
     )
 
-    # --------------------------------------
-    # Filtering
-    # --------------------------------------
+
+    # =====================================================
+    # FILTERING
+    # =====================================================
 
     with st.spinner(
-        "Filtering creators according to "
-        "the selected niche..."
+        f"Filtering influencers for {effective_niche}..."
     ):
 
         try:
 
             filtered_df = filter_influencers(
                 influencers_df,
-                niche.strip(),
+                effective_niche,
                 niche_data
             )
 
@@ -250,23 +381,31 @@ if st.button(
 
             st.stop()
 
+
     st.session_state.filtered_df = (
         filtered_df
     )
 
-    # --------------------------------------
-    # Save filtering results
-    # --------------------------------------
+
+    # =====================================================
+    # SAVE FILTERED DATA
+    # =====================================================
 
     os.makedirs(
         "data",
         exist_ok=True
     )
 
+
     filtered_df.to_csv(
         "data/filtered_influencers.csv",
         index=False
     )
+
+
+    # =====================================================
+    # SUCCESS MESSAGE
+    # =====================================================
 
     st.success(
         f"Discovery and filtering complete! "
@@ -274,15 +413,14 @@ if st.button(
     )
 
 
-# ==========================================
-# Display Discovery Results
-# ==========================================
+# =========================================================
+# DISPLAY FILTERING RESULTS
+# =========================================================
 
 if (
-    st.session_state.influencers_df
-    is not None
-    and st.session_state.filtered_df
-    is not None
+    st.session_state.influencers_df is not None
+    and
+    st.session_state.filtered_df is not None
 ):
 
     discovered_df = (
@@ -293,36 +431,61 @@ if (
         st.session_state.filtered_df
     )
 
-    qualified_count = len(
-        filtered_df[
-            filtered_df["status"]
-            == "Qualified"
-        ]
-    )
 
-    rejected_count = len(
-        filtered_df[
-            filtered_df["status"]
-            == "Rejected"
-        ]
-    )
+    # -----------------------------------------------------
+    # Calculate qualified/rejected
+    # -----------------------------------------------------
+
+    if "status" in filtered_df.columns:
+
+        qualified_count = len(
+            filtered_df[
+                filtered_df["status"]
+                == "Qualified"
+            ]
+        )
+
+        rejected_count = len(
+            filtered_df[
+                filtered_df["status"]
+                == "Rejected"
+            ]
+        )
+
+    else:
+
+        qualified_count = 0
+        rejected_count = 0
+
+
+    # -----------------------------------------------------
+    # Metrics
+    # -----------------------------------------------------
 
     col1, col2, col3 = st.columns(3)
+
 
     col1.metric(
         "Creators Available",
         len(discovered_df)
     )
 
+
     col2.metric(
         "Qualified",
         qualified_count
     )
 
+
     col3.metric(
         "Rejected",
         rejected_count
     )
+
+
+    # -----------------------------------------------------
+    # Display filtering results
+    # -----------------------------------------------------
 
     with st.expander(
         "🔎 View Filtering Results"
@@ -337,11 +500,13 @@ if (
             "profile_url"
         ]
 
+
         available_columns = [
             column
             for column in display_columns
             if column in filtered_df.columns
         ]
+
 
         st.dataframe(
             filtered_df[
@@ -352,16 +517,16 @@ if (
         )
 
 
-# ==========================================
+# =========================================================
 # STEP 2
-# Profile Enrichment
-# ==========================================
+# PROFILE ENRICHMENT
+# =========================================================
 
 st.header("2️⃣ Profile Enrichment")
 
+
 if (
-    st.session_state.filtered_df
-    is not None
+    st.session_state.filtered_df is not None
 ):
 
     if st.button(
@@ -389,9 +554,10 @@ if (
 
                 st.stop()
 
-        # ----------------------------------
-        # Email enrichment
-        # ----------------------------------
+
+        # =================================================
+        # EMAIL ENRICHMENT
+        # =================================================
 
         with st.spinner(
             "Checking publicly available "
@@ -415,32 +581,37 @@ if (
                     "contact_email"
                 ] = "Not Found"
 
+
+        # Store
         st.session_state.enriched_df = (
             enriched_df
         )
 
+
+        # Save
         enriched_df.to_csv(
             "data/enriched_influencers.csv",
             index=False
         )
+
 
         st.success(
             "Profile enrichment complete!"
         )
 
 
-# ==========================================
-# Display Enrichment
-# ==========================================
+# =========================================================
+# DISPLAY ENRICHMENT
+# =========================================================
 
 if (
-    st.session_state.enriched_df
-    is not None
+    st.session_state.enriched_df is not None
 ):
 
     enriched_df = (
         st.session_state.enriched_df
     )
+
 
     with st.expander(
         "📊 View Enriched Influencers"
@@ -455,11 +626,13 @@ if (
             "contact_email"
         ]
 
+
         available_columns = [
             column
             for column in display_columns
             if column in enriched_df.columns
         ]
+
 
         st.dataframe(
             enriched_df[
@@ -470,16 +643,16 @@ if (
         )
 
 
-# ==========================================
+# =========================================================
 # STEP 3
-# AI Personalization
-# ==========================================
+# AI PERSONALIZATION
+# =========================================================
 
 st.header("3️⃣ AI Personalization")
 
+
 if (
-    st.session_state.enriched_df
-    is not None
+    st.session_state.enriched_df is not None
 ):
 
     if st.button(
@@ -507,36 +680,40 @@ if (
 
                 st.stop()
 
+
         st.session_state.outreach_df = (
             outreach_df
         )
+
 
         outreach_df.to_csv(
             "data/outreach.csv",
             index=False
         )
 
+
         st.success(
             "Personalized messages generated!"
         )
 
 
-# ==========================================
-# Display Personalized Messages
-# ==========================================
+# =========================================================
+# DISPLAY PERSONALIZED OUTREACH
+# =========================================================
 
 if (
-    st.session_state.outreach_df
-    is not None
+    st.session_state.outreach_df is not None
 ):
 
     outreach_df = (
         st.session_state.outreach_df
     )
 
+
     st.subheader(
         "✍️ Personalized Outreach"
     )
+
 
     for _, row in outreach_df.iterrows():
 
@@ -544,6 +721,7 @@ if (
             "name",
             "Creator"
         )
+
 
         with st.expander(
             f"📩 {creator_name}"
@@ -554,13 +732,16 @@ if (
                 "Not Found"
             )
 
+
             st.write(
                 f"**Email:** {email}"
             )
 
+
             st.write(
                 "**Email Pitch**"
             )
+
 
             st.info(
                 row.get(
@@ -569,9 +750,11 @@ if (
                 )
             )
 
+
             st.write(
                 "**Instagram DM**"
             )
+
 
             st.info(
                 row.get(
@@ -581,24 +764,25 @@ if (
             )
 
 
-# ==========================================
+# =========================================================
 # STEP 4
-# Sending Simulation
-# ==========================================
+# SENDING SIMULATION
+# =========================================================
 
 st.header(
     "4️⃣ Sending & Outreach Tracking"
 )
 
+
 if (
-    st.session_state.outreach_df
-    is not None
+    st.session_state.outreach_df is not None
 ):
 
     st.warning(
-        "Demo Mode: Email sending is simulated. "
+        "🧪 Demo Mode: Email sending is simulated. "
         "No real emails will be sent."
     )
+
 
     if st.button(
         "📧 Simulate Outreach"
@@ -624,73 +808,112 @@ if (
 
                 st.stop()
 
+
         st.session_state.tracker_df = (
             tracker_df
         )
+
 
         tracker_df.to_csv(
             "data/outreach_tracker.csv",
             index=False
         )
 
+
         st.success(
             "Outreach simulation completed!"
         )
 
 
-# ==========================================
-# Outreach Tracker
-# ==========================================
+# =========================================================
+# OUTREACH TRACKER
+# =========================================================
 
 if (
-    st.session_state.tracker_df
-    is not None
+    st.session_state.tracker_df is not None
 ):
 
     tracker_df = (
         st.session_state.tracker_df
     )
 
+
     st.subheader(
         "📊 Outreach Tracker"
     )
 
-    sent_count = len(
-        tracker_df[
-            tracker_df["sent"]
-            == "Yes"
-        ]
-    )
 
-    no_email_count = len(
-        tracker_df[
+    # -----------------------------------------------------
+    # Sent count
+    # -----------------------------------------------------
+
+    if "sent" in tracker_df.columns:
+
+        sent_count = len(
             tracker_df[
-                "outreach_status"
+                tracker_df["sent"]
+                == "Yes"
             ]
-            == "No Email"
-        ]
-    )
+        )
+
+    else:
+
+        sent_count = 0
+
+
+    # -----------------------------------------------------
+    # No email count
+    # -----------------------------------------------------
+
+    if "outreach_status" in tracker_df.columns:
+
+        no_email_count = len(
+            tracker_df[
+                tracker_df[
+                    "outreach_status"
+                ]
+                == "No Email"
+            ]
+        )
+
+    else:
+
+        no_email_count = 0
+
 
     total_count = len(
         tracker_df
     )
 
+
+    # -----------------------------------------------------
+    # Metrics
+    # -----------------------------------------------------
+
     col1, col2, col3 = st.columns(3)
+
 
     col1.metric(
         "Sent (Simulated)",
         sent_count
     )
 
+
     col2.metric(
         "No Email",
         no_email_count
     )
 
+
     col3.metric(
         "Total",
         total_count
     )
+
+
+    # -----------------------------------------------------
+    # Tracker table
+    # -----------------------------------------------------
 
     display_columns = [
         "name",
@@ -701,11 +924,13 @@ if (
         "outreach_status"
     ]
 
+
     available_columns = [
         column
         for column in display_columns
         if column in tracker_df.columns
     ]
+
 
     st.dataframe(
         tracker_df[
@@ -716,13 +941,13 @@ if (
     )
 
 
-# ==========================================
-# Footer
-# ==========================================
+# =========================================================
+# FOOTER
+# =========================================================
 
 st.divider()
 
 st.caption(
     "AI Influencer Outreach System • "
-    "Groq + LangChain + YouTube Data + Streamlit"
+    "Groq + LangChain + YouTube Data API + Streamlit"
 )
