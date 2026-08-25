@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .streamlit/secrets.toml
 .DS_Store
+data/filtered_influencers.csv
+data/enriched_influencers.csv
+data/outreach.csv
+data/outreach_tracker.csv
